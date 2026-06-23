@@ -112,16 +112,25 @@ fits a long-running container — see "MCP server: stdio vs HTTP" below
 for when to use each.
 
 ```bash
-# 1. Set the four required vars (in .env at repo root, or in your shell)
-cat > .env <<EOF
-WHATSAPP_API_KEY=$(openssl rand -base64 48)
-WHATSAPP_JWT_SECRET=$(openssl rand -base64 48)
-POSTGRES_USER=whatsapp
-POSTGRES_PASS=$(openssl rand -base64 24)
-EOF
+# 1. Create your .env from the template at the repo root
+cp .env.example .env
+```
 
-# 2. Bring it all up
-docker compose up
+Then open `.env` and fill in `WHATSAPP_API_KEY`, `WHATSAPP_JWT_SECRET`, and
+`POSTGRES_PASS`. Generate the two secrets with whichever is handy:
+
+```bash
+# Linux / macOS / Git Bash
+openssl rand -base64 48
+```
+```powershell
+# PowerShell (Windows)
+[Convert]::ToBase64String((1..48 | % { Get-Random -Max 256 }))
+```
+
+```bash
+# 2. Bring it all up (run from the repo root)
+docker compose up -d
 ```
 
 Once running:
@@ -139,7 +148,14 @@ The MCP server has two run modes selected by `IS_HTTP`:
 
 Stdio mode is **not** appropriate for the Docker image — Claude Desktop
 does not natively `docker run` to spawn an MCP child. Build a local
-binary instead.
+binary instead. A common setup is to keep the **bridge + Postgres running
+in Docker** (`docker compose up -d`) and point a locally-built stdio MCP
+binary at it via `API_BASE_URL=http://localhost:8080/api`.
+
+> **Windows note:** save `claude_desktop_config.json` as **UTF-8 without a
+> BOM**. PowerShell's `Set-Content -Encoding utf8` prepends a BOM, which
+> makes Claude Desktop fail to load with an "is not valid JSON" error on
+> the leading `{`.
 
 ## Authentication
 
