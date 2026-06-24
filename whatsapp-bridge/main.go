@@ -2781,10 +2781,10 @@ func main() {
 	var outdatedRetries int
 	var outdatedRetriesMu sync.Mutex
 
-	// repair is signalled when the device is logged out so the connection
-	// manager below re-arms the QR pairing flow (a fresh QR) automatically,
-	// instead of leaving the bridge stuck with no way to re-link.
-	repair := make(chan struct{}, 1)
+	// loggedOut is signalled when the device is logged out while running, so
+	// the main goroutine can exit and let the orchestrator restart the bridge
+	// into a fresh pairing flow (whatsmeow cannot reuse a deleted device).
+	loggedOut := make(chan struct{}, 1)
 
 	client.AddEventHandler(func(evt interface{}) {
 		switch v := evt.(type) {
@@ -2808,14 +2808,14 @@ func main() {
 			state.SetConnected(false)
 
 		case *events.LoggedOut:
-			logger.Warnf("Device logged out; re-arming pairing for a fresh QR")
+			logger.Warnf("Device logged out; bridge will restart to offer a fresh QR")
 			state.SetLoggedIn(false)
 			state.SetConnected(false)
 			state.ClearPairingQR()
-			// Ask the connection manager to start a new pairing flow.
-			// Non-blocking so we never stall whatsmeow's event dispatch.
+			// Signal main to exit so the orchestrator restarts us into a fresh
+			// pairing flow. Non-blocking so we never stall whatsmeow's events.
 			select {
-			case repair <- struct{}{}:
+			case loggedOut <- struct{}{}:
 			default:
 			}
 
@@ -2935,37 +2935,24 @@ func main() {
 		}
 	}
 
-	// Connection manager: connect/pair, then re-arm automatically whenever the
-	// device is logged out so a fresh QR appears without a manual restart.
-	go func() {
-		for {
-			pairOrConnect()
-
-			if client.Store.ID != nil {
-				// Linked. Wait for a logout before pairing again.
-				<-repair
-				slog.Info("re-arming pairing after logout")
-			} else {
-				// Pairing didn't complete (transient error). Retry shortly, or
-				// immediately if a logout is signalled in the meantime.
-				select {
-				case <-repair:
-				case <-time.After(10 * time.Second):
-				}
-			}
-
-			client.Disconnect()
-			time.Sleep(1 * time.Second)
-		}
-	}()
+	// Connect, or run the initial QR pairing flow (with QR-expiry regeneration).
+	go pairOrConnect()
 
 	exitChan := make(chan os.Signal, 1)
 	signal.Notify(exitChan, syscall.SIGINT, syscall.SIGTERM)
 
 	fmt.Println("REST server is running. Press Ctrl+C to disconnect and exit.")
 
-	<-exitChan
+	select {
+	case <-exitChan:
+		fmt.Println("Disconnecting...")
+	case <-loggedOut:
+		// whatsmeow can't reuse a client whose device was deleted, so the
+		// cleanest recovery is to exit and let the orchestrator (Docker
+		// `restart: always`) start us again — a fresh process has no device
+		// and re-pairs with a new QR automatically.
+		logger.Warnf("logged out; exiting so the bridge restarts with a fresh QR")
+	}
 
-	fmt.Println("Disconnecting...")
 	client.Disconnect()
 }
