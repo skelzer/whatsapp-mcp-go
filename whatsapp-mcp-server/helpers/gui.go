@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -31,14 +32,7 @@ type guiServer struct {
 // RunConnectionWizardGUI starts the local web wizard, opens the browser, and
 // returns once WhatsApp is linked (or the process is interrupted).
 func RunConnectionWizardGUI() error {
-	if apiKey == "" {
-		fmt.Println("✗ WHATSAPP_API_KEY is not set.")
-		fmt.Println("  Set it to the same value the bridge uses, then run the wizard again:")
-		fmt.Println("    Windows (PowerShell):  $env:WHATSAPP_API_KEY = \"<your key>\"")
-		fmt.Println("    macOS/Linux:           export WHATSAPP_API_KEY=\"<your key>\"")
-		return fmt.Errorf("WHATSAPP_API_KEY not set")
-	}
-
+	// The API key may be unset here — the wizard prompts for it in the browser.
 	s := &guiServer{done: make(chan struct{})}
 
 	mux := http.NewServeMux()
@@ -46,6 +40,7 @@ func RunConnectionWizardGUI() error {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/info", s.handleInfo)
 	mux.HandleFunc("/api/write-config", s.handleWriteConfig)
+	mux.HandleFunc("/api/set-key", s.handleSetKey)
 	mux.HandleFunc("/api/done", s.handleDone)
 	mux.HandleFunc("/qr.png", s.handleQR)
 
@@ -117,7 +112,41 @@ func (s *guiServer) handleDone(w http.ResponseWriter, r *http.Request) {
 
 func (s *guiServer) handleInfo(w http.ResponseWriter, r *http.Request) {
 	exe, _ := os.Executable()
-	writeJSON(w, map[string]any{"exe": exe, "apiBaseURL": apiBaseURL})
+	writeJSON(w, map[string]any{"exe": exe, "apiBaseURL": apiBaseURL, "hasKey": HasAPIKey()})
+}
+
+// handleSetKey accepts the API key from the wizard UI, stores it, and validates
+// it against the bridge when reachable.
+func (s *guiServer) handleSetKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Key string `json:"key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, map[string]any{"ok": false, "error": "invalid request"})
+		return
+	}
+	key := strings.TrimSpace(body.Key)
+	if key == "" {
+		writeJSON(w, map[string]any{"ok": false, "error": "API key is required"})
+		return
+	}
+
+	SetAPIKey(key)
+	if _, err := GetOrRefreshJwtToken(); err != nil {
+		if strings.Contains(err.Error(), "401") {
+			writeJSON(w, map[string]any{"ok": false,
+				"error": "The bridge rejected that key (401). Make sure it matches the bridge's WHATSAPP_API_KEY."})
+			return
+		}
+		// Bridge not reachable yet — the key is saved; the next step waits for it.
+		writeJSON(w, map[string]any{"ok": true, "warning": "Saved, but the bridge isn't reachable yet."})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
 }
 
 // claudeConfigPath returns the default Claude Desktop config path for this OS.
@@ -184,7 +213,7 @@ func (s *guiServer) handleWriteConfig(w http.ResponseWriter, r *http.Request) {
 	servers["whatsapp-mcp"] = map[string]any{
 		"command": exe,
 		"env": map[string]any{
-			"WHATSAPP_API_KEY": apiKey,
+			"WHATSAPP_API_KEY": APIKey(),
 			"API_BASE_URL":     apiBaseURL,
 		},
 	}

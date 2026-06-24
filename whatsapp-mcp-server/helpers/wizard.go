@@ -91,6 +91,10 @@ func isHTTPMode() bool {
 // returns true when InitMcpTool should stop (the run was handled here, usually
 // via os.Exit), or false to continue starting the MCP server.
 func handleCLI() bool {
+	// If no API key is set via the environment, try to pick one up from a
+	// nearby .env so the wizard can skip the manual key prompt.
+	LoadAPIKeyFromDotenv()
+
 	if len(os.Args) > 1 {
 		switch strings.ToLower(os.Args[1]) {
 		case "connect", "wizard", "setup", "login":

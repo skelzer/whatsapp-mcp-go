@@ -33,6 +33,29 @@ func readApiKeyEnv() string {
 	return ""
 }
 
+// SetAPIKey sets the API key at runtime (e.g. when the connection wizard
+// collects it from the UI instead of the environment) and clears any cached
+// JWT so the next call re-authenticates with the new key.
+func SetAPIKey(k string) {
+	tokenMutex.Lock()
+	defer tokenMutex.Unlock()
+	apiKey = k
+	jwtToken = ""
+	tokenExpiresAt = time.Time{}
+}
+
+// APIKey returns the currently configured API key.
+func APIKey() string {
+	tokenMutex.Lock()
+	defer tokenMutex.Unlock()
+	return apiKey
+}
+
+// HasAPIKey reports whether an API key is currently configured.
+func HasAPIKey() bool {
+	return APIKey() != ""
+}
+
 // GetOrRefreshJwtToken returns a valid JWT or fetches a new one
 func GetOrRefreshJwtToken() (string, error) {
 	tokenMutex.Lock()

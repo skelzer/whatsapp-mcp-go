@@ -46,6 +46,12 @@
   button:disabled { opacity: .4; cursor: not-allowed; }
   button.ghost { background: var(--panel); color: var(--text); border: 1px solid var(--line); font-weight: 500; }
   button.ghost:hover { background: #243640; }
+  input[type=text], input[type=password] {
+    width: 100%; padding: 11px 13px; border-radius: 9px; border: 1px solid var(--line);
+    background: #0b141a; color: var(--text); font-size: 13px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  input[type=text]:focus, input[type=password]:focus { outline: none; border-color: var(--accent); }
   .qrwrap { display: grid; place-items: center; gap: 14px; }
   .qrbox { background: #fff; padding: 14px; border-radius: 12px; width: 248px; height: 248px; display: grid; place-items: center; }
   .qrbox img { width: 220px; height: 220px; image-rendering: pixelated; }
@@ -92,6 +98,18 @@
           <span>I understand the risk and want to link my WhatsApp account.</span>
         </label>
         <button id="continue" disabled>Continue</button>
+      </section>
+
+      <!-- Step 1b: API key (shown only when not provided via env) -->
+      <section id="step-key" class="step">
+        <h2>Enter your API key</h2>
+        <p class="lead">This app and your bridge share one secret. Paste the <code>WHATSAPP_API_KEY</code> your bridge is already running with (it's in the bridge's <code>.env</code>) — the two must match. It's saved only on this machine and used to authenticate to your local bridge.</p>
+        <input id="apikey" type="password" placeholder="WHATSAPP_API_KEY" autocomplete="off" spellcheck="false" />
+        <label class="check" style="margin:10px 0 16px; font-size:13px">
+          <input type="checkbox" id="showkey" /> <span>Show key</span>
+        </label>
+        <div id="key-error" class="warn" style="display:none"></div>
+        <button id="key-submit">Continue</button>
       </section>
 
       <!-- Step 2: connecting / bridge down -->
@@ -149,10 +167,36 @@
     document.getElementById(id).classList.add('active');
   }
 
-  // Step 1 -> consent
+  // Step 1 -> consent -> (key entry if needed) -> connecting
   var ack = document.getElementById('ack'), cont = document.getElementById('continue');
   ack.addEventListener('change', function () { cont.disabled = !ack.checked; });
-  cont.addEventListener('click', function () { show('step-connect'); startPolling(); });
+  cont.addEventListener('click', async function () {
+    try { info = await (await fetch('/api/info')).json(); } catch (e) { info = {}; }
+    if (info && info.hasKey) { show('step-connect'); startPolling(); }
+    else { show('step-key'); document.getElementById('apikey').focus(); }
+  });
+
+  // Step 1b: API key entry
+  document.getElementById('showkey').addEventListener('change', function () {
+    document.getElementById('apikey').type = this.checked ? 'text' : 'password';
+  });
+  async function submitKey() {
+    var btn = document.getElementById('key-submit'), err = document.getElementById('key-error');
+    var key = document.getElementById('apikey').value.trim();
+    if (!key) { err.style.display = 'block'; err.textContent = 'Please paste your API key.'; return; }
+    btn.disabled = true; btn.textContent = 'Checking…'; err.style.display = 'none';
+    try {
+      var j = await (await fetch('/api/set-key', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key })
+      })).json();
+      if (j.ok) { show('step-connect'); startPolling(); }
+      else { err.style.display = 'block'; err.textContent = j.error || 'Could not set the key.'; btn.disabled = false; btn.textContent = 'Continue'; }
+    } catch (e) {
+      err.style.display = 'block'; err.textContent = 'Request failed: ' + e; btn.disabled = false; btn.textContent = 'Continue';
+    }
+  }
+  document.getElementById('key-submit').addEventListener('click', submitKey);
+  document.getElementById('apikey').addEventListener('keydown', function (e) { if (e.key === 'Enter') submitKey(); });
 
   // Fetch the QR and only swap the image on a real 200. During the bridge's
   // pairing-session regeneration there is a brief gap where the endpoint returns
