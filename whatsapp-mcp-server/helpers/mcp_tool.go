@@ -17,6 +17,12 @@ import (
 
 // InitMcpTool initializes MCP tool for the MCP server
 func InitMcpTool() {
+	// Handle CLI subcommands and the interactive connection wizard before
+	// starting the MCP server itself.
+	if handleCLI() {
+		return
+	}
+
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "whatsapp-mcp",
 		Version: "v1.0.0",

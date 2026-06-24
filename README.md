@@ -157,6 +157,36 @@ binary at it via `API_BASE_URL=http://localhost:8080/api`.
 > makes Claude Desktop fail to load with an "is not valid JSON" error on
 > the leading `{`.
 
+### Connection wizard
+
+The MCP server binary doubles as a guided setup tool. Build it once:
+
+```bash
+cd whatsapp-mcp-server
+make build           # produces ./whatsapp-mcp  (or: make build-windows)
+```
+
+Then link your WhatsApp account:
+
+```bash
+./whatsapp-mcp connect
+```
+
+The wizard checks that the bridge is up, **warns about the WhatsApp ban
+risk**, shows the pairing QR (it opens the image and you scan it from
+WhatsApp → Linked Devices), waits until the link succeeds, and prints the
+exact `claude_desktop_config.json` snippet to paste.
+
+It also runs **automatically** whenever you launch the binary directly in a
+terminal and WhatsApp isn't linked yet. It never runs when an MCP host
+(Claude Desktop) starts the binary over stdio, so the protocol is never
+disturbed. Other commands:
+
+```bash
+./whatsapp-mcp status    # print connected / logged_in / pairing_required
+./whatsapp-mcp help      # usage and environment variables
+```
+
 ## Authentication
 
 The HTTP API is protected by a two-step **API key → JWT** flow.
