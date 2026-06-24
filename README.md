@@ -4,7 +4,7 @@ A lightweight, WhatsApp MCP server and bridge — rewritten entirely in Go for s
 
 This project is a re‑imagining of the original **[whatsapp-mcp](https://github.com/lharries/whatsapp-mcp)** by **lharries**, who created the first WhatsApp MCP bridge using a Python MCP server and a Go WhatsApp client powered by **WhatsMeow**. Their work demonstrated how Claude Desktop could interact with WhatsApp through the MCP protocol, and this project would not exist without that foundation.
 
-Start `whatsapp-bridge` -> then run `whatsapp-mcp-server` in your preferred mode (STDIO or HTTP).
+**Get running in one step** with the [Quick start](#quick-start-recommended) below, or wire up the bridge and `whatsapp-mcp-server` manually (STDIO or HTTP).
 
 <table>
   <tr>
@@ -47,8 +47,8 @@ The manual steps below are for development or custom setups.
 
 ### Prerequisites
 
-- Go
-- Anthropic Claude Desktop app (or Cursor) or `n8n` workflow
+- **To just run it:** [Docker Desktop](https://www.docker.com/products/docker-desktop/), plus the Anthropic Claude Desktop app (or Cursor, or an `n8n` workflow). Use the [Quick start](#quick-start-recommended) above — no Go needed.
+- **To build from source:** Go 1.25+.
 - FFmpeg (_optional_) - Only needed for audio messages. If you want to send audio files as playable WhatsApp voice messages, they must be in `.ogg` Opus format. With FFmpeg installed, the MCP server will automatically convert non-Opus audio files. Without FFmpeg, you can still send raw audio files using the `send_file` tool.
 
 ### Steps
@@ -93,11 +93,12 @@ The manual steps below are for development or custom setups.
        }
       ```
 
-      For **Claude**, save this as `claude_desktop_config.json` in your Claude Desktop configuration directory at:
+      For **Claude**, save this as `claude_desktop_config.json` in your Claude Desktop configuration directory:
 
-      ```
-      ~/Library/Application Support/Claude/claude_desktop_config.json
-      ```
+      - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+      - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+      > Tip: the [connection wizard](#connection-wizard) can write this file for you — correct path, merged with any existing config, and UTF-8 without a BOM.
 
       For **Cursor**, save this as `mcp.json` in your Cursor configuration directory at:
 
@@ -120,7 +121,7 @@ If you're running this project on Windows, be aware that `go-sqlite3` requires *
    ```bash
    cd whatsapp-bridge
    go env -w CGO_ENABLED=1
-   go run main.go # or use this to enabled webhook and http streaming, `WEBHOOK_URL=http://192.168.178.119:5777/sse IS_HTTP=true go run main.go`
+   go run main.go # or enable webhook + HTTP streaming: `WEBHOOK_URL=http://localhost:5777/sse IS_HTTP=true go run main.go`
    ```
 
 ### Or run everything in Docker
@@ -264,7 +265,7 @@ reverse proxy, terminate rate limiting upstream — the bridge currently uses
 
 This application consists of two main components:
 
-1. **WhatsApp Bridge** (`whatsapp-bridge/`): A Go application that connects to WhatsApp's web API, handles authentication via QR code, and stores message history in SQLite. It serves as the bridge between WhatsApp and the MCP server.
+1. **WhatsApp Bridge** (`whatsapp-bridge/`): A Go application that connects to WhatsApp's web API, handles authentication via QR code, and stores message history in PostgreSQL (default) or SQLite. It serves as the bridge between WhatsApp and the MCP server, and exposes a JWT-protected REST API.
 
 2. **MCP Server** (`whatsapp-mcp-server/`): A Go implemention of the Model Context Protocol (MCP), which provides standardized tools for Claude to interact with WhatsApp data and send/receive messages.
 
@@ -315,18 +316,19 @@ By default, just the metadata of the media is stored in the local database. The 
 ## Technical Details
 
 1. Claude sends requests to the MCP server
-2. The MCP server queries the Go bridge for WhatsApp data or directly to the SQLite database
-3. The Bridge accesses the WhatsApp API and keeps the SQLite or Postgres database up to date
+2. The MCP server calls the Go bridge's REST API for WhatsApp data — it never touches the database directly
+3. The bridge talks to WhatsApp and keeps the PostgreSQL or SQLite database up to date
 4. Data flows back through the chain to Claude
 5. When sending messages, the request flows from Claude through the MCP server to the bridge and to WhatsApp
 
 ### Authentication Issues
 
-- **QR Code Not Displaying**: If the QR code doesn't appear, try restarting the authentication script. If issues persist, check if your terminal supports displaying QR codes.
-- **WhatsApp Already Logged In**: If your session is already active, the Go bridge will automatically reconnect without showing a QR code.
-- **Device Limit Reached**: WhatsApp limits the number of linked devices. If you reach this limit, you'll need to remove an existing device from WhatsApp on your phone (Settings > Linked Devices).
+- **QR Code Not Displaying**: Prefer the [connection wizard](#connection-wizard) (`whatsapp-mcp connect`), which renders the QR in your browser. From a terminal, `docker compose logs wa-bridge` also shows it.
+- **WhatsApp Already Logged In**: If your session is already active, the bridge reconnects automatically without showing a QR code.
+- **Device Logged Out / Removed**: If WhatsApp logs the device out (or you remove it on your phone), the Dockerized bridge exits and `restart: always` brings it back with a fresh QR automatically — just re-link. A standalone bridge needs a manual restart.
+- **Device Limit Reached**: WhatsApp limits the number of linked devices. If you reach this limit, remove an existing device from WhatsApp on your phone (Settings > Linked Devices).
 - **No Messages Loading**: After initial authentication, it can take several minutes for your message history to load, especially if you have many chats.
-- **WhatsApp Out of Sync**: If your WhatsApp messages get out of sync with the bridge, delete both database files (`whatsapp-bridge/store/messages.db` and `whatsapp-bridge/store/whatsapp.db`) and restart the bridge to re-authenticate.
+- **Pairing keeps failing / out of sync**: Reset the bridge's WhatsApp session and re-link. With Docker/Postgres, drop the `whatsmeow_*` tables; with SQLite, delete `whatsapp-bridge/store/*.db`. Then restart the bridge.
 
 This fork takes the core idea and rebuilds it with a different philosophy:  
 **one language, one binary, clean architecture, and flexible deployment.**
@@ -360,6 +362,9 @@ The original project only supported SQLite.
 
 - Full WhatsApp client using **WhatsMeow**
 - Pure Go MCP server
+- Browser-based connection wizard with one-click Claude Desktop setup
+- One-step launcher (`start.cmd` / `start.sh`) + prebuilt binaries for Windows, macOS and Linux
+- Automatic re-pairing after a logout
 - Clean API boundary between MCP and bridge
 - SQLite or PostgreSQL support
 - STDIO + HTTP modes
