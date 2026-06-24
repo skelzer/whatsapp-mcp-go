@@ -1514,6 +1514,24 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, cfg *
 		_, _ = w.Write(png)
 	})
 
+	// Returns the raw pairing QR code string so clients (e.g. the MCP
+	// connection wizard) can render the QR directly in a terminal.
+	apiMux.HandleFunc("/auth/pairing-code", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		code := state.PairingCode()
+		if code == "" {
+			http.Error(w, "no pairing code available; client is logged in or has not started pairing yet", http.StatusGone)
+			return
+		}
+		respondJSON(w, http.StatusOK, map[string]any{
+			"code":      code,
+			"logged_in": state.LoggedIn(),
+		})
+	})
+
 	// Authentication
 	protected := auth.JwtAuthMiddleware(cfg, apiMux)
 	http.Handle("/api/", http.StripPrefix("/api", protected))
@@ -2848,17 +2866,31 @@ func main() {
 
 	// Pair / connect to WhatsApp in a goroutine so main can block on signals.
 	go func() {
-		if client.Store.ID == nil {
+		if client.Store.ID != nil {
+			if err := client.Connect(); err != nil {
+				logger.Errorf("Failed to connect: %v", err)
+			}
+			return
+		}
+
+		// Not paired yet. Keep offering a fresh QR until the device is linked.
+		// whatsmeow's QR channel expires after a couple of minutes ("timeout");
+		// instead of giving up we reconnect and request a new channel so a
+		// valid QR is always available to the connection wizard.
+		for client.Store.ID == nil {
 			qrChan, _ := client.GetQRChannel(context.Background())
 			if err := client.Connect(); err != nil {
 				logger.Errorf("Failed to connect: %v", err)
 				return
 			}
+
+			timedOut := false
 			for evt := range qrChan {
 				switch evt.Event {
 				case "code":
 					fmt.Println("\nScan this QR code with your WhatsApp app:")
 					qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
+					state.SetPairingCode(evt.Code)
 					if png, err := qrcode.Encode(evt.Code, qrcode.Medium, 256); err == nil {
 						state.SetPairingQRPNG(png)
 					} else {
@@ -2868,15 +2900,21 @@ func main() {
 					fmt.Println("\nSuccessfully connected and authenticated!")
 					return
 				case "timeout":
-					logger.Errorf("Pairing QR timeout")
-					return
+					timedOut = true
 				}
 			}
-		} else {
-			if err := client.Connect(); err != nil {
-				logger.Errorf("Failed to connect: %v", err)
+
+			if !timedOut {
+				// Channel closed for a reason other than QR expiry; stop.
 				return
 			}
+
+			// QR expired. Drop the stale code, disconnect, and loop to get a
+			// fresh QR channel.
+			slog.Info("pairing QR expired; regenerating")
+			state.ClearPairingQR()
+			client.Disconnect()
+			time.Sleep(1 * time.Second)
 		}
 	}()
 

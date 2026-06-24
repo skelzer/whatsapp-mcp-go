@@ -10,6 +10,7 @@ type State struct {
 	connected    bool
 	loggedIn     bool
 	pairingQRPNG []byte
+	pairingCode  string
 	waVersion    string
 }
 
@@ -43,6 +44,14 @@ func (s *State) PairingQRPNG() []byte {
 	return out
 }
 
+// PairingCode returns the raw pairing QR code string, or "" if pairing is not
+// currently available. Clients can render this directly as a QR in a terminal.
+func (s *State) PairingCode() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.pairingCode
+}
+
 // PairingRequired returns true when the client is not logged in AND
 // a pairing QR is currently available.
 func (s *State) PairingRequired() bool {
@@ -69,10 +78,20 @@ func (s *State) SetPairingQRPNG(b []byte) {
 	s.pairingQRPNG = b
 }
 
+// SetPairingCode stores the raw pairing QR code string.
+func (s *State) SetPairingCode(code string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pairingCode = code
+}
+
+// ClearPairingQR clears both the QR PNG and the raw pairing code. Called once
+// the client is logged in (or pairing is otherwise no longer in progress).
 func (s *State) ClearPairingQR() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pairingQRPNG = nil
+	s.pairingCode = ""
 }
 
 func (s *State) WAVersion() string {

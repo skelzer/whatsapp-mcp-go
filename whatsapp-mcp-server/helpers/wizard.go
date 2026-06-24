@@ -2,17 +2,15 @@ package helpers
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
+
+	"github.com/mdp/qrterminal"
 )
 
 // BridgeStatus mirrors the bridge's GET /api/auth/status response.
@@ -51,31 +49,37 @@ func fetchStatus() (*BridgeStatus, error) {
 	return &st, nil
 }
 
-// fetchPairingQRPNG retrieves the current pairing QR as PNG bytes. The returned
-// status code is 200 when a QR is available, 410 when the bridge is already
-// logged in or pairing has not started yet.
-func fetchPairingQRPNG() ([]byte, int, error) {
+// fetchPairingCode retrieves the current raw pairing QR code string. The
+// returned status code is 200 when a code is available, 410 when the bridge is
+// already logged in or pairing has not started yet.
+func fetchPairingCode() (string, int, error) {
 	token, err := GetOrRefreshJwtToken()
 	if err != nil {
-		return nil, 0, err
+		return "", 0, err
 	}
-	req, err := http.NewRequest(http.MethodGet, apiBaseURL+"/auth/pairing-qr", nil)
+	req, err := http.NewRequest(http.MethodGet, apiBaseURL+"/auth/pairing-code", nil)
 	if err != nil {
-		return nil, 0, err
+		return "", 0, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := (&http.Client{Timeout: apiTimeout}).Do(req)
 	if err != nil {
-		return nil, 0, err
+		return "", 0, err
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, resp.StatusCode, nil
+		return "", resp.StatusCode, nil
 	}
-	return body, resp.StatusCode, nil
+	var out struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return "", resp.StatusCode, err
+	}
+	return out.Code, resp.StatusCode, nil
 }
 
 func isHTTPMode() bool {
@@ -90,7 +94,7 @@ func handleCLI() bool {
 	if len(os.Args) > 1 {
 		switch strings.ToLower(os.Args[1]) {
 		case "connect", "wizard", "setup", "login":
-			if err := RunConnectionWizard(); err != nil {
+			if err := runWizard(); err != nil {
 				fmt.Fprintf(os.Stderr, "\nConnection wizard failed: %v\n", err)
 				os.Exit(1)
 			}
@@ -113,7 +117,7 @@ func handleCLI() bool {
 	// that only an MCP host is meant to drive.
 	if !isHTTPMode() && IsInteractive() {
 		if st, err := fetchStatus(); err != nil || st == nil || !st.LoggedIn {
-			if werr := RunConnectionWizard(); werr != nil {
+			if werr := runWizard(); werr != nil {
 				fmt.Fprintf(os.Stderr, "\nConnection wizard failed: %v\n", werr)
 				os.Exit(1)
 			}
@@ -126,6 +130,18 @@ func handleCLI() bool {
 	}
 
 	return false
+}
+
+// runWizard launches the browser-based connection wizard by default, or the
+// terminal wizard when `--terminal` / `-t` is passed.
+func runWizard() error {
+	for _, a := range os.Args[2:] {
+		switch strings.ToLower(a) {
+		case "--terminal", "-t":
+			return RunConnectionWizard()
+		}
+	}
+	return RunConnectionWizardGUI()
 }
 
 func printStatus() {
@@ -145,9 +161,10 @@ Usage:
   whatsapp-mcp [command]
 
 Commands:
-  connect    Run the interactive connection wizard (link WhatsApp)
-  status     Print the bridge connection/login status
-  help       Show this help
+  connect             Open the browser connection wizard to link WhatsApp
+  connect --terminal  Use the in-terminal wizard instead (headless/SSH)
+  status              Print the bridge connection/login status
+  help                Show this help
 
 With no command the server starts in MCP mode (stdio by default, or HTTP when
 IS_HTTP=true). When launched directly in a terminal without a linked WhatsApp
@@ -164,6 +181,7 @@ Environment:
 // RunConnectionWizard guides a user through linking the bridge to WhatsApp.
 // It is interactive and must only be called when IsInteractive() is true.
 func RunConnectionWizard() error {
+	enableVirtualTerminal()
 	printWizardHeader()
 
 	if apiKey == "" {
@@ -225,66 +243,48 @@ func waitForBridge() (*BridgeStatus, error) {
 	return nil, fmt.Errorf("gave up waiting for the bridge at %s", apiBaseURL)
 }
 
-// runPairing shows the pairing QR and polls until the bridge reports logged_in.
+// runPairing renders the pairing QR directly in the terminal, refreshing it in
+// place as the bridge rotates the code, and returns once the bridge reports
+// logged_in.
 func runPairing() error {
-	qrPath := filepath.Join(os.TempDir(), "whatsapp-pairing-qr.png")
-	var lastQR []byte
-	opened := false
-	deadline := time.Now().Add(5 * time.Minute)
+	const clearScreen = "\x1b[2J\x1b[H" // clear screen + cursor home (VT)
+	lastCode := ""
+	deadline := time.Now().Add(10 * time.Minute)
 
 	fmt.Println("\nWaiting for the pairing QR from the bridge…")
 	for time.Now().Before(deadline) {
 		if st, err := fetchStatus(); err == nil && st.LoggedIn {
-			fmt.Println("\n✓ Linked to WhatsApp successfully!")
-			_ = os.Remove(qrPath)
+			fmt.Print(clearScreen)
+			fmt.Println("✓ Linked to WhatsApp successfully!")
 			return nil
 		}
 
-		png, code, err := fetchPairingQRPNG()
+		code, status, err := fetchPairingCode()
 		if err != nil {
-			time.Sleep(3 * time.Second)
+			time.Sleep(2 * time.Second)
 			continue
 		}
-
-		switch code {
-		case http.StatusOK:
-			if !bytes.Equal(png, lastQR) {
-				if err := os.WriteFile(qrPath, png, 0o600); err != nil {
-					return fmt.Errorf("failed to write QR image: %w", err)
-				}
-				lastQR = png
-				if !opened {
-					fmt.Printf("\nQR code saved to: %s\n", qrPath)
-					if err := openFile(qrPath); err != nil {
-						fmt.Println("  (couldn't auto-open it — open the file above manually)")
-					} else {
-						fmt.Println("  Opening it in your default image viewer…")
-					}
-					fmt.Println("\n  On your phone: WhatsApp → Settings → Linked Devices → Link a Device")
-					fmt.Println("  (Alternatively scan from the bridge logs: docker compose logs wa-bridge)")
-					opened = true
-				} else {
-					fmt.Println("  • QR refreshed — re-open the saved image if your viewer didn't update.")
-				}
-			}
-		case http.StatusGone:
-			// Bridge isn't in the pairing flow yet; keep polling.
+		if status == http.StatusOK && code != "" && code != lastCode {
+			lastCode = code
+			renderQRScreen(clearScreen, code)
 		}
-		time.Sleep(3 * time.Second)
+		time.Sleep(2 * time.Second)
 	}
-	return fmt.Errorf("timed out after 5 min. Re-run `whatsapp-mcp connect` to try again")
+	return fmt.Errorf("timed out after 10 min waiting for the scan. " +
+		"Re-run `whatsapp-mcp connect` to try again")
 }
 
-// openFile opens path with the OS default application.
-func openFile(path string) error {
-	switch runtime.GOOS {
-	case "windows":
-		return exec.Command("cmd", "/c", "start", "", path).Start()
-	case "darwin":
-		return exec.Command("open", path).Start()
-	default:
-		return exec.Command("xdg-open", path).Start()
-	}
+// renderQRScreen draws the QR for code in place, replacing the previous frame.
+func renderQRScreen(clearScreen, code string) {
+	fmt.Print(clearScreen)
+	fmt.Println("============== WhatsApp MCP — Link your account ==============")
+	fmt.Println()
+	qrterminal.GenerateHalfBlock(code, qrterminal.L, os.Stdout)
+	fmt.Println()
+	fmt.Println("  On your phone: WhatsApp → Settings → Linked Devices → Link a Device,")
+	fmt.Println("  then point the camera at this QR. It refreshes on its own — just")
+	fmt.Println("  scan whatever is on screen. Waiting for you to scan…")
+	fmt.Println("=============================================================")
 }
 
 // confirm asks a yes/no question and returns true only on an explicit yes.

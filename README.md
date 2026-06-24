@@ -172,13 +172,24 @@ Then link your WhatsApp account:
 ./whatsapp-mcp connect
 ```
 
-The wizard checks that the bridge is up, **warns about the WhatsApp ban
-risk**, shows the pairing QR (it opens the image and you scan it from
-WhatsApp → Linked Devices), waits until the link succeeds, and prints the
-exact `claude_desktop_config.json` snippet to paste.
+This opens a small **browser wizard** (served on localhost — no Electron, no
+extra dependencies, just the Go binary) that:
 
-It also runs **automatically** whenever you launch the binary directly in a
-terminal and WhatsApp isn't linked yet. It never runs when an MCP host
+1. **Warns about the WhatsApp ban risk** and asks you to acknowledge it.
+2. Checks the bridge is up (and nudges you to `docker compose up -d` if not).
+3. Shows the **pairing QR live in the page**, auto-refreshing, until you scan
+   it from WhatsApp → Settings → Linked Devices → Link a Device.
+4. On success, offers an **"Add to Claude Desktop"** button that writes the
+   `whatsapp-mcp` entry into your `claude_desktop_config.json` for you —
+   merging with any existing config, backing up the old file, and saving as
+   UTF-8 **without a BOM** (which Claude Desktop otherwise rejects).
+
+Your API key never leaves the Go process — the page only ever sees a proxied
+QR image. For headless/SSH setups, `./whatsapp-mcp connect --terminal` runs
+the same flow with the QR rendered directly in the terminal.
+
+The wizard also runs **automatically** whenever you launch the binary directly
+in a terminal and WhatsApp isn't linked yet. It never runs when an MCP host
 (Claude Desktop) starts the binary over stdio, so the protocol is never
 disturbed. Other commands:
 

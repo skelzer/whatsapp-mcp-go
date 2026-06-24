@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WhatsApp MCP — Connection Wizard</title>
+<style>
+  :root {
+    --bg: #0b141a; --card: #111b21; --panel: #1f2c34; --line: #2a3942;
+    --text: #e9edef; --muted: #8696a0; --accent: #25d366; --accent-d: #1da851;
+    --warn-bg: #3a2a16; --warn-line: #7a5b1e; --warn-text: #ffd27a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .card {
+    width: 100%; max-width: 460px; background: var(--card);
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,.45);
+  }
+  .head { padding: 20px 24px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+  .logo { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); display: grid; place-items: center; color: #06281a; font-weight: 800; }
+  .head h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  .head p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+  .body { padding: 24px; }
+  .step { display: none; }
+  .step.active { display: block; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  p.lead { color: var(--muted); margin: 0 0 18px; }
+  .warn {
+    background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-text);
+    border-radius: 10px; padding: 14px 16px; font-size: 13.5px; margin-bottom: 18px;
+  }
+  .warn b { color: #ffe6ad; }
+  label.check { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; font-size: 14px; color: var(--text); margin-bottom: 20px; }
+  label.check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--accent); }
+  button {
+    width: 100%; padding: 12px 16px; border: 0; border-radius: 9px; cursor: pointer;
+    background: var(--accent); color: #06281a; font-weight: 700; font-size: 15px;
+    transition: background .15s, opacity .15s;
+  }
+  button:hover { background: var(--accent-d); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.ghost { background: var(--panel); color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+  button.ghost:hover { background: #243640; }
+  .qrwrap { display: grid; place-items: center; gap: 14px; }
+  .qrbox { background: #fff; padding: 14px; border-radius: 12px; width: 248px; height: 248px; display: grid; place-items: center; }
+  .qrbox img { width: 220px; height: 220px; image-rendering: pixelated; }
+  .spin { width: 26px; height: 26px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: sp 0.8s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .status { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13.5px; justify-content: center; margin-top: 4px; }
+  .hint { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; font-size: 13.5px; color: var(--muted); }
+  .hint code { background: #0b141a; padding: 2px 7px; border-radius: 5px; color: var(--accent); font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+  .success-mark { width: 56px; height: 56px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; margin: 0 auto 16px; color: #06281a; font-size: 30px; font-weight: 900; }
+  pre {
+    background: #0b141a; border: 1px solid var(--line); border-radius: 10px; padding: 14px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12px;
+    color: var(--text); overflow-x: auto; margin: 14px 0; white-space: pre;
+  }
+  .note { font-size: 12.5px; color: var(--muted); margin-top: 14px; }
+  .center { text-align: center; }
+  .row { display: flex; gap: 10px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <div class="logo">W</div>
+      <div>
+        <h1>WhatsApp MCP</h1>
+        <p>Connection wizard</p>
+      </div>
+    </div>
+    <div class="body">
+
+      <!-- Step 1: warning -->
+      <section id="step-warn" class="step active">
+        <h2>Before you link</h2>
+        <div class="warn">
+          <b>Risk of account ban.</b> This links to WhatsApp through
+          <b>whatsmeow</b>, an unofficial WhatsApp Web client that is not approved
+          by WhatsApp/Meta. WhatsApp may flag, restrict, or permanently ban
+          accounts that use unofficial clients — the risk is highest with
+          automated or bulk sending. Use an account you can afford to lose, keep
+          usage personal and low-volume, and never spam.
+        </div>
+        <label class="check">
+          <input type="checkbox" id="ack" />
+          <span>I understand the risk and want to link my WhatsApp account.</span>
+        </label>
+        <button id="continue" disabled>Continue</button>
+      </section>
+
+      <!-- Step 2: connecting / bridge down -->
+      <section id="step-connect" class="step">
+        <h2>Connecting…</h2>
+        <p class="lead">Checking the WhatsApp bridge.</p>
+        <div id="connect-spin" class="status"><span class="spin"></span> Reaching the bridge…</div>
+        <div id="connect-down" class="hint" style="display:none">
+          Can't reach the bridge yet. Start it from the repo root with
+          <code>docker compose up -d</code>, then keep this page open — it will
+          continue automatically.
+        </div>
+      </section>
+
+      <!-- Step 3: QR -->
+      <section id="step-qr" class="step">
+        <h2>Scan to link</h2>
+        <p class="lead">On your phone: WhatsApp → Settings → Linked Devices → <b>Link a Device</b>, then scan this code. It refreshes on its own.</p>
+        <div class="qrwrap">
+          <div class="qrbox"><img id="qr" alt="pairing QR" /></div>
+          <div class="status"><span class="spin"></span> <span id="qr-hint">Waiting for you to scan…</span></div>
+        </div>
+      </section>
+
+      <!-- Step 4: success -->
+      <section id="step-done" class="step">
+        <div class="success-mark">✓</div>
+        <h2 class="center">Linked successfully</h2>
+        <p class="lead center">Your WhatsApp account is now connected to the bridge.</p>
+        <p style="font-size:13.5px;margin-bottom:10px">Set up Claude Desktop in one click — this writes the MCP server into your <code style="font-size:12px">claude_desktop_config.json</code> (merging with anything already there):</p>
+        <div class="row">
+          <button id="save">Add to Claude Desktop</button>
+          <button id="copy" class="ghost">Copy config</button>
+        </div>
+        <div id="save-result" class="hint" style="display:none; margin-top:14px"></div>
+        <p class="note" id="restart-note" style="display:none">✓ Done. Now fully quit Claude Desktop (tray → Quit) and reopen it, then ask Claude to use WhatsApp. You can close this tab.</p>
+        <details style="margin-top:16px">
+          <summary style="cursor:pointer; color:var(--muted); font-size:12.5px">Prefer to add it manually?</summary>
+          <pre id="config">{ }</pre>
+          <p class="note">Save this into <code style="font-size:11px">claude_desktop_config.json</code> as <b>UTF-8 without a BOM</b>, replace the API key, then restart Claude Desktop.</p>
+        </details>
+        <div style="margin-top:18px">
+          <button id="finish" class="ghost">Finish &amp; close wizard</button>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+<script>
+  var qrTimer = null, pollTimer = null, info = null, qrLoaded = false;
+
+  function show(id) {
+    document.querySelectorAll('.step').forEach(function (e) { e.classList.remove('active'); });
+    document.getElementById(id).classList.add('active');
+  }
+
+  // Step 1 -> consent
+  var ack = document.getElementById('ack'), cont = document.getElementById('continue');
+  ack.addEventListener('change', function () { cont.disabled = !ack.checked; });
+  cont.addEventListener('click', function () { show('step-connect'); startPolling(); });
+
+  // Fetch the QR and only swap the image on a real 200. During the bridge's
+  // pairing-session regeneration there is a brief gap where the endpoint returns
+  // 204/410 — in that case we keep showing the last good QR instead of flashing
+  // a broken image, and surface a subtle "refreshing" hint.
+  async function refreshQR() {
+    var hint = document.getElementById('qr-hint');
+    try {
+      var r = await fetch('/qr.png?t=' + Date.now(), { cache: 'no-store' });
+      if (r.status === 200) {
+        var blob = await r.blob();
+        if (blob.size > 0) {
+          var img = document.getElementById('qr'), old = img.src;
+          img.src = URL.createObjectURL(blob);
+          if (old && old.indexOf('blob:') === 0) URL.revokeObjectURL(old);
+          img.style.opacity = '1';
+          qrLoaded = true;
+          hint.textContent = 'Waiting for you to scan…';
+          return;
+        }
+      }
+      // No QR right now (regeneration gap): keep the last one, hint we're refreshing.
+      if (qrLoaded) { document.getElementById('qr').style.opacity = '0.45'; hint.textContent = 'Refreshing code…'; }
+    } catch (e) {}
+  }
+
+  function buildConfig() {
+    if (!info) return '{ }';
+    var obj = { mcpServers: { 'whatsapp-mcp': {
+      command: info.exe,
+      env: { WHATSAPP_API_KEY: '<same key as the bridge>', API_BASE_URL: info.apiBaseURL }
+    } } };
+    return JSON.stringify(obj, null, 2);
+  }
+
+  async function poll() {
+    var s;
+    try { s = await (await fetch('/api/status')).json(); }
+    catch (e) { return; }
+
+    if (!s.reachable) {
+      show('step-connect');
+      document.getElementById('connect-spin').style.display = 'none';
+      document.getElementById('connect-down').style.display = 'block';
+      return;
+    }
+
+    if (s.logged_in) {
+      if (qrTimer) { clearInterval(qrTimer); qrTimer = null; }
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      if (!info) { try { info = await (await fetch('/api/info')).json(); } catch (e) {} }
+      document.getElementById('config').textContent = buildConfig();
+      show('step-done');
+      return;
+    }
+
+    // reachable, not logged in -> show QR
+    show('step-qr');
+    if (!qrTimer) { refreshQR(); qrTimer = setInterval(refreshQR, 2500); }
+  }
+
+  async function startPolling() {
+    try { info = await (await fetch('/api/info')).json(); } catch (e) {}
+    poll();
+    pollTimer = setInterval(poll, 2000);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  document.getElementById('save').addEventListener('click', async function () {
+    var btn = this, res = document.getElementById('save-result');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      var j = await (await fetch('/api/write-config', { method: 'POST' })).json();
+      if (j.ok) {
+        btn.textContent = 'Added ✓';
+        res.style.display = 'block';
+        res.innerHTML = 'Saved to <code>' + escapeHtml(j.path) + '</code>'
+          + (j.backup ? ' (previous file backed up to <code>' + escapeHtml(j.backup) + '</code>)' : '') + '.';
+        document.getElementById('restart-note').style.display = 'block';
+      } else {
+        btn.disabled = false; btn.textContent = 'Add to Claude Desktop';
+        res.style.display = 'block';
+        res.innerHTML = "Couldn't save automatically: " + escapeHtml(j.error || 'unknown error')
+          + '<br>Use “Copy config” and add it manually instead.';
+      }
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Add to Claude Desktop';
+      res.style.display = 'block';
+      res.textContent = 'Save failed: ' + e;
+    }
+  });
+
+  document.getElementById('copy').addEventListener('click', function () {
+    var t = document.getElementById('config').textContent;
+    navigator.clipboard.writeText(t).then(function () {
+      var b = document.getElementById('copy');
+      b.textContent = 'Copied ✓';
+      setTimeout(function () { b.textContent = 'Copy config'; }, 1500);
+    });
+  });
+
+  document.getElementById('finish').addEventListener('click', async function () {
+    try { await fetch('/api/done', { method: 'POST' }); } catch (e) {}
+    document.querySelector('.body').innerHTML =
+      '<div class="center" style="padding:24px 8px">' +
+      '<div class="success-mark">✓</div>' +
+      '<h2>All done</h2>' +
+      '<p class="lead">You can close this tab now.</p></div>';
+  });
+</script>
+</body>
+</html>
