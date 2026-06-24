@@ -23,6 +23,26 @@ Start `whatsapp-bridge` -> then run `whatsapp-mcp-server` in your preferred mode
   </tr>
 </table>
 
+## Quick start (recommended)
+
+If you just want it running, you only need **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** installed. Then:
+
+```bash
+git clone https://github.com/iamatulsingh/whatsapp-mcp-go.git
+cd whatsapp-mcp-go
+```
+
+- **Windows:** double-click **`start.cmd`**
+- **macOS / Linux:** run **`./start.sh`**
+
+The launcher generates the required secrets (`.env`), starts the bridge and
+database in Docker, downloads the connection wizard, and opens it in your
+browser — where you acknowledge the ban-risk warning, scan the QR to link
+WhatsApp, and click **"Add to Claude Desktop"** to finish. No Go toolchain
+required.
+
+The manual steps below are for development or custom setups.
+
 ## Installation
 
 ### Prerequisites
