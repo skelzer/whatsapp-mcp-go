@@ -1,0 +1,5 @@
+# Keep shell scripts LF so they run on macOS/Linux regardless of the OS they
+# were committed from; keep Windows batch files CRLF.
+*.sh text eol=lf
+start.sh text eol=lf
+*.cmd text eol=crlf
