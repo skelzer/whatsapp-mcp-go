@@ -159,7 +159,13 @@ binary at it via `API_BASE_URL=http://localhost:8080/api`.
 
 ### Connection wizard
 
-The MCP server binary doubles as a guided setup tool. Build it once:
+The MCP server binary doubles as a guided setup tool.
+
+**Easiest:** download the prebuilt `whatsapp-mcp` for your platform from the
+[Releases](https://github.com/iamatulsingh/whatsapp-mcp-go/releases) page — no
+Go toolchain needed.
+
+**Or build it from source:**
 
 ```bash
 cd whatsapp-mcp-server
@@ -176,10 +182,13 @@ This opens a small **browser wizard** (served on localhost — no Electron, no
 extra dependencies, just the Go binary) that:
 
 1. **Warns about the WhatsApp ban risk** and asks you to acknowledge it.
-2. Checks the bridge is up (and nudges you to `docker compose up -d` if not).
-3. Shows the **pairing QR live in the page**, auto-refreshing, until you scan
+2. **Prompts for your API key** right in the page if it isn't already in the
+   environment — no need to export `WHATSAPP_API_KEY` first. It's validated
+   against the bridge and never leaves your machine.
+3. Checks the bridge is up (and nudges you to `docker compose up -d` if not).
+4. Shows the **pairing QR live in the page**, auto-refreshing, until you scan
    it from WhatsApp → Settings → Linked Devices → Link a Device.
-4. On success, offers an **"Add to Claude Desktop"** button that writes the
+5. On success, offers an **"Add to Claude Desktop"** button that writes the
    `whatsapp-mcp` entry into your `claude_desktop_config.json` for you —
    merging with any existing config, backing up the old file, and saving as
    UTF-8 **without a BOM** (which Claude Desktop otherwise rejects).
