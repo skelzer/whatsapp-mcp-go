@@ -2781,6 +2781,11 @@ func main() {
 	var outdatedRetries int
 	var outdatedRetriesMu sync.Mutex
 
+	// repair is signalled when the device is logged out so the connection
+	// manager below re-arms the QR pairing flow (a fresh QR) automatically,
+	// instead of leaving the bridge stuck with no way to re-link.
+	repair := make(chan struct{}, 1)
+
 	client.AddEventHandler(func(evt interface{}) {
 		switch v := evt.(type) {
 		case *events.Message:
@@ -2803,9 +2808,16 @@ func main() {
 			state.SetConnected(false)
 
 		case *events.LoggedOut:
-			logger.Warnf("Device logged out, please scan QR code to log in again")
+			logger.Warnf("Device logged out; re-arming pairing for a fresh QR")
 			state.SetLoggedIn(false)
 			state.SetConnected(false)
+			state.ClearPairingQR()
+			// Ask the connection manager to start a new pairing flow.
+			// Non-blocking so we never stall whatsmeow's event dispatch.
+			select {
+			case repair <- struct{}{}:
+			default:
+			}
 
 		case *events.ClientOutdated:
 			outdatedRetriesMu.Lock()
@@ -2864,8 +2876,13 @@ func main() {
 		}
 	}()
 
-	// Pair / connect to WhatsApp in a goroutine so main can block on signals.
-	go func() {
+	// pairOrConnect drives one connection cycle: if a session already exists,
+	// just connect; otherwise run the QR pairing loop until the device is
+	// linked. whatsmeow's QR channel expires after a couple of minutes
+	// ("timeout"); instead of giving up we reconnect and request a new channel
+	// so a valid QR is always available to the connection wizard. It returns
+	// once the device is linked (Store.ID set) or on a non-recoverable error.
+	pairOrConnect := func() {
 		if client.Store.ID != nil {
 			if err := client.Connect(); err != nil {
 				logger.Errorf("Failed to connect: %v", err)
@@ -2873,12 +2890,12 @@ func main() {
 			return
 		}
 
-		// Not paired yet. Keep offering a fresh QR until the device is linked.
-		// whatsmeow's QR channel expires after a couple of minutes ("timeout");
-		// instead of giving up we reconnect and request a new channel so a
-		// valid QR is always available to the connection wizard.
 		for client.Store.ID == nil {
-			qrChan, _ := client.GetQRChannel(context.Background())
+			qrChan, err := client.GetQRChannel(context.Background())
+			if err != nil {
+				logger.Errorf("Failed to open QR channel: %v", err)
+				return
+			}
 			if err := client.Connect(); err != nil {
 				logger.Errorf("Failed to connect: %v", err)
 				return
@@ -2913,6 +2930,30 @@ func main() {
 			// fresh QR channel.
 			slog.Info("pairing QR expired; regenerating")
 			state.ClearPairingQR()
+			client.Disconnect()
+			time.Sleep(1 * time.Second)
+		}
+	}
+
+	// Connection manager: connect/pair, then re-arm automatically whenever the
+	// device is logged out so a fresh QR appears without a manual restart.
+	go func() {
+		for {
+			pairOrConnect()
+
+			if client.Store.ID != nil {
+				// Linked. Wait for a logout before pairing again.
+				<-repair
+				slog.Info("re-arming pairing after logout")
+			} else {
+				// Pairing didn't complete (transient error). Retry shortly, or
+				// immediately if a logout is signalled in the meantime.
+				select {
+				case <-repair:
+				case <-time.After(10 * time.Second):
+				}
+			}
+
 			client.Disconnect()
 			time.Sleep(1 * time.Second)
 		}
