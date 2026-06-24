@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # Repo to download prebuilt binaries from. Change this if you run your own fork.
-REPO="iamatulsingh/whatsapp-mcp-go"
+REPO="skelzer/whatsapp-mcp-go"
 
 cd "$(dirname "$0")"
 

@@ -6,7 +6,7 @@
 $ErrorActionPreference = "Stop"
 
 # Repo to download prebuilt binaries from. Change this if you run your own fork.
-$Repo = "iamatulsingh/whatsapp-mcp-go"
+$Repo = "skelzer/whatsapp-mcp-go"
 
 # Work from the repo root (this script lives in scripts\).
 $root = Split-Path -Parent $PSScriptRoot

@@ -28,7 +28,7 @@ Start `whatsapp-bridge` -> then run `whatsapp-mcp-server` in your preferred mode
 If you just want it running, you only need **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** installed. Then:
 
 ```bash
-git clone https://github.com/iamatulsingh/whatsapp-mcp-go.git
+git clone https://github.com/skelzer/whatsapp-mcp-go.git
 cd whatsapp-mcp-go
 ```
 
@@ -55,7 +55,7 @@ The manual steps below are for development or custom setups.
 1. **Clone this repository**
 
    ```bash
-   git clone https://github.com/iamatulsingh/whatsapp-mcp-go.git
+   git clone https://github.com/skelzer/whatsapp-mcp-go.git
    cd whatsapp-mcp-go
    ```
 
@@ -182,7 +182,7 @@ binary at it via `API_BASE_URL=http://localhost:8080/api`.
 The MCP server binary doubles as a guided setup tool.
 
 **Easiest:** download the prebuilt `whatsapp-mcp` for your platform from the
-[Releases](https://github.com/iamatulsingh/whatsapp-mcp-go/releases) page — no
+[Releases](https://github.com/skelzer/whatsapp-mcp-go/releases) page — no
 Go toolchain needed.
 
 **Or build it from source:**
